@@ -1,6 +1,8 @@
 #include "msp.h"
 #include <stdio.h>
 
+//mitchel was here
+
 uint8_t hours = 12;
 uint8_t minutes = 55;
 uint8_t seconds = 0;
