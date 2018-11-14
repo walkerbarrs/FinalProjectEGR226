@@ -1,21 +1,38 @@
 #include "msp.h"
 #include <stdio.h>
 
-//mitchel was here
+/*
+ * Name:Walker Barrs and Mith Havercroft
+ * Date:11/14/2018
+ * Professor: Professor Zuidema
+ * Class:   EGR226
+ * Description: This is a code for an alarm clock that allows the user
+ * to set the time and alarm using pushbuttons
+ */
 
-uint8_t hours = 12;
+float Ftemp = 0;
+uint8_t hours = 12;     //Hours, minutes, seconds for time
 uint8_t minutes = 55;
 uint8_t seconds = 0;
+uint8_t Ahours = 12;    //Hours, minutes, seconds for Alarm
+uint8_t Aminutes = 55;
+uint8_t Aseconds = 0;
+uint8_t Aam_pm = 1;
 uint8_t am_pm = 1; //% = 0 for am % = 1 for pm
 int counting = 0;
 int clockChange = 1;
 uint8_t currentState = 0;  //this will tell the handlers when to act and when to not so that weird things arent updated when they are not supposed to
-uint8_t setAlarm = 0;
+uint8_t setTime = 0;
 uint8_t blinking = 0;
+uint8_t onOffUp = 0;
+uint8_t alarmSet = 0; //Variable to keep track of whether the alarm is on or off
+uint8_t snoozedec = 0;
+uint8_t setalarm = 0;
 
 enum states{
     COUNTING,    //This is the first state where the switch has not yet been pressed and LED is off
     SET_TIME,   //This is the state where the time is set
+    SET_ALARM,  //this is the state where the alarm time is set
 };
 //Declare Custom Functions
 void LCD_init();
@@ -39,10 +56,20 @@ void updateClock();
 void PORT3_IRQHandler(void);
 void clockChangeInit();
 void checkClockChange();
-void setAlarmInit();
-void blinkHours();
-void blinkMinutes();
-void blinkSeconds();
+void setTimeInit();
+void blinkCLKHours();
+void blinkCLKMinutes();
+void blinkCLKSeconds();
+void onOffUpBtn();
+void snoozeDec();
+void PortADC_init(void);
+void ADC14_init(void);
+void Get_ADC_Convert_Temp(void);
+void blinkALRMSeconds();
+void blinkALRMMinutes();
+void blinkALRMHours();
+void setAlarm();
+
 
 
 void main(void)
@@ -56,8 +83,12 @@ void main(void)
     LCD_init();
     ms_delay(10);
     clockChangeInit();
-    setAlarmInit();
+    setTimeInit();
     countIntrpt();
+    onOffUpBtn();
+    ADC14_init();
+    setAlarm();
+    snoozeDec();
     __enable_irq();
     enum states state = COUNTING;    //Default to LED OFF and create state variable of type states
 
@@ -69,21 +100,173 @@ void main(void)
             if(counting == 1)
             {
                 readPotentiometer();           //Read the voltage from the potentiometer
+                Get_ADC_Convert_Temp();
                 updateClock();
                 printVals();
                 checkClockChange();
                 counting  = 0;
+                if(alarmSet == 1)
+                {
+                    if((hours == Ahours) && (minutes == Aminutes) && (am_pm == Aam_pm)) printf("Fuck Yeah\n");
+                    if(snoozedec == 1)
+                    {
+                        Aminutes = Aminutes + 10;
+                        if(Aminutes > 59)
+                            {
+                                Aminutes = Aminutes - 60;
+                                Aam_pm++;
+                                Ahours ++;
+                                if(Ahours >12) Ahours = 1;
+                            }
+                        snoozedec = 0;
+                    }
+                }
                 if(currentState == 1) state = SET_TIME;
+                if(currentState == 2) state = SET_ALARM;
             }
+            P3->IE |= 0xEC;
             break;
 
         case SET_TIME:
-            if(setAlarm == 1) blinkHours();
-            else if(setAlarm == 2) blinkMinutes();
-            else if(setAlarm == 3) blinkSeconds();
+            if(setTime == 1)
+            {
+                blinkCLKHours();
+            }
+            else if(setTime == 2)
+            {
+                blinkCLKMinutes();
+            }
+            else if(setTime == 3)
+            {
+                blinkCLKSeconds();
+            }
             readPotentiometer();
+            Get_ADC_Convert_Temp();
             checkClockChange();
-            break;
+            if(onOffUp == 1)
+            {
+               us_delay(100);
+               if(setTime == 1)
+               {
+                   hours++;
+                   if(hours == 13)
+                       {
+                           am_pm++;
+                           hours = 1;
+
+                       }
+               }
+               else if(setTime == 2)
+               {
+                   minutes++;
+                   if(minutes == 60)
+                       {
+                           am_pm++;
+                           minutes = 0;
+                       }
+               }
+               onOffUp = 0;
+            }
+            if(snoozedec == 1)
+            {
+                if(setTime == 1)
+                {
+                    hours--;
+                    if(hours == 0)
+                        {
+                            am_pm++;
+                            hours = 12;
+                        }
+                }
+                else if(setTime == 2)
+                {
+                    minutes--;
+                    if(minutes == 255)
+                        {
+                            am_pm++;
+                            minutes = 59;
+                        }
+                }
+                snoozedec = 0;
+            }
+            if(currentState == 0)
+            {
+                setTime = 0;
+                state = COUNTING;
+            }
+        P3->IE |=0xEC;
+        break;
+
+        case SET_ALARM:
+                if(setalarm == 1)
+                {
+                    blinkALRMHours();
+                }
+                else if(setalarm == 2)
+                {
+                    blinkALRMMinutes();
+                }
+                else if(setalarm == 3)
+                {
+                    blinkALRMSeconds();
+                }
+                readPotentiometer();
+                Get_ADC_Convert_Temp();
+                checkClockChange();
+                if(onOffUp == 1)
+                {
+                   if(setalarm == 1)
+                   {
+                       Ahours++;
+                       if(Ahours == 13)
+                           {
+                               Aam_pm++;
+                               Ahours = 1;
+
+                           }
+                   }
+                   else if(setalarm == 2)
+                   {
+
+                       Aminutes++;
+                       if(Aminutes == 60)
+                           {
+                               Aam_pm++;
+                               Aminutes = 0;
+                           }
+                   }
+                   onOffUp = 0;
+                }
+                if(snoozedec == 1)
+                {
+                    if(setalarm == 1)
+                    {
+                        Ahours--;
+                        if(Ahours == 0)
+                            {
+                                Aam_pm++;
+                                Ahours = 12;
+                            }
+                    }
+                    else if(setalarm == 2)
+                    {
+                        Aminutes--;
+                        if(Aminutes == 255)
+                            {
+                                Aam_pm++;
+                                Aminutes = 59;
+                            }
+                    }
+                    snoozedec = 0;
+                }
+                if(currentState == 0)
+                {
+                    setalarm = 0;
+                    alarmSet = 1;
+                    state = COUNTING;
+                }
+        P3->IE |=0xEC;
+        break;
         }
     }
 
@@ -241,38 +424,98 @@ void printVals()
     int i = 0;//initialize i at zero for the for loop counter
     //Store the strings that need to sent to the LCD into four strings
     char currentTime[17];
+    char alarmOnOff[17];
+    char currentAlarm[17];
+    char currentTemp[17];
 
     if((am_pm %2) == 1)
     {
         if(seconds < 10 && minutes >= 10)
-           sprintf(currentTime,"  %2d:%d:0%d am   ", hours, minutes, seconds);
+           sprintf(currentTime,"   %2d:%d:0%d am   ", hours, minutes, seconds);
         else if(seconds < 10 && minutes < 10)
-            sprintf(currentTime,"  %2d:0%d:0%d am   ", hours, minutes, seconds);
+            sprintf(currentTime,"   %2d:0%d:0%d am   ", hours, minutes, seconds);
         else if(minutes < 10 && seconds >=10)
-            sprintf(currentTime,"  %2d:0%d:%d am   ", hours, minutes, seconds);
+            sprintf(currentTime,"   %2d:0%d:%d am   ", hours, minutes, seconds);
         else
-            sprintf(currentTime,"  %2d:%d:%d am   ", hours, minutes, seconds);
+            sprintf(currentTime,"   %2d:%d:%d am   ", hours, minutes, seconds);
     }
     else
     {
         if(seconds < 10 && minutes >= 10)
-           sprintf(currentTime,"  %2d:%d:0%d pm   ", hours, minutes, seconds);
+           sprintf(currentTime,"   %2d:%d:0%d pm   ", hours, minutes, seconds);
         else if(seconds < 10 && minutes < 10)
-            sprintf(currentTime,"  %2d:0%d:0%d pm   ", hours, minutes, seconds);
+            sprintf(currentTime,"   %2d:0%d:0%d pm   ", hours, minutes, seconds);
         else if(minutes < 10 && seconds >=10)
-            sprintf(currentTime,"  %2d:0%d:%d pm   ", hours, minutes, seconds);
+            sprintf(currentTime,"   %2d:0%d:%d pm   ", hours, minutes, seconds);
         else
-            sprintf(currentTime,"  %2d:%d:%d pm   ", hours, minutes, seconds);
+            sprintf(currentTime,"   %2d:%d:%d pm   ", hours, minutes, seconds);
     }
-    ms_delay(5);
+    if((Aam_pm %2) == 1)
+    {
+        if(Aseconds < 10 && Aminutes >= 10)
+           sprintf(currentAlarm,"   %2d:%d:0%d am   ", Ahours, Aminutes, Aseconds);
+        else if(Aseconds < 10 && Aminutes < 10)
+            sprintf(currentAlarm,"   %2d:0%d:0%d am   ", Ahours, Aminutes, Aseconds);
+        else if(Aminutes < 10 && Aseconds >=10)
+            sprintf(currentAlarm,"   %2d:0%d:%d am   ", Ahours, Aminutes, Aseconds);
+        else
+            sprintf(currentAlarm,"   %2d:%d:%d am   ", Ahours, Aminutes, Aseconds);
+    }
+
+    else
+    {
+        if(Aseconds < 10 && Aminutes >= 10)
+           sprintf(currentAlarm,"   %2d:%d:0%d pm   ", Ahours, Aminutes, Aseconds);
+        else if(Aseconds < 10 && Aminutes < 10)
+            sprintf(currentAlarm,"   %2d:0%d:0%d pm   ", Ahours, Aminutes, Aseconds);
+        else if(Aminutes < 10 && Aseconds >=10)
+            sprintf(currentAlarm,"   %2d:0%d:%d pm   ", Ahours, Aminutes, Aseconds);
+        else
+            sprintf(currentAlarm,"   %2d:%d:%d pm   ", Ahours, Aminutes, Aseconds);
+    }
+
+    if(alarmSet == 1)
+    {
+        sprintf(alarmOnOff, " Alarm  Enabled ");
+    }
+    else
+    {
+        sprintf(alarmOnOff, " Alarm Disabled ");
+    }
+    ms_delay(1);
     LCD_command(0x01);  //clear display
     LCD_command(0x80);  //start on first line
-    ms_delay(5);
+    ms_delay(1);
 
     for(i=0; i<16; i++)     //run through string length
     {
         LCD_data(currentTime[i]);     //send LCD_data 1 character at a time
     }
+
+    LCD_command(0xC0);
+    ms_delay(1);
+    for(i=0;i<16;i++)
+    {
+        LCD_data(alarmOnOff[i]);
+    }
+
+    LCD_command(0x90);
+    ms_delay(1);
+    for(i=0;i<16;i++)
+    {
+        LCD_data(currentAlarm[i]);
+    }
+
+
+    sprintf(currentTemp, "     F:  %.1f     ", Ftemp);
+    LCD_command(0xD0);  //start on fourth line
+    ms_delay(1);
+
+    for(i=0; i<16; i++)     //run through string length
+    {
+        LCD_data(currentTemp[i]);     //send LCD_data 1 character at a time
+    }
+
 
 }
 //Custom function to initialize the screensaver with an interrupt with no output
@@ -301,19 +544,19 @@ void updateClock()
             {
                 seconds = 0;
                 minutes++;
-                ms_delay(10);
+                ms_delay(1);
             }
         if(minutes == 60)
         {
             minutes = 0;
             hours++;
-            ms_delay(10);
+            ms_delay(1);
         }
         if(hours == 13)
         {
           hours = 1;
           am_pm++;
-          ms_delay(10);
+          ms_delay(1);
         }
 
 }
@@ -329,8 +572,8 @@ void clockChangeInit()
     P3->IE  |= BIT7;            //Enable an interrupt on P3.7
     P3->IFG = 0;                //Initialize interrupt flag to 0
 }
-//custom function to initialize the setAlarm button
-void setAlarmInit()
+//custom function to initialize the setTime button
+void setTimeInit()
 {
     P3->SEL0 &= ~BIT6;          //Set as GPIO
     P3->SEL1 &= ~BIT6;
@@ -340,56 +583,126 @@ void setAlarmInit()
     P3->IES |= BIT6;            //Set the interrupt flag to be set when the button goes from 1 to 0
     P3->IE  |= BIT6;            //Enable an interrupt on P3.7
     P3->IFG = 0;                //Initialize interrupt flag to 0
-    NVIC->ISER[1] = 1 <<((PORT3_IRQn)& 31);         //This initializes which interrupt is going to be used
 }
 //Custom function add one to clockChange when the button is pressed with no output
 void PORT3_IRQHandler(void)
 {
-    if(currentState == 0)
+    if(currentState == 0)   //counting state
     {
         if(P3->IFG & BIT7)          //If the interrupt is on P3.6
         {
-            ms_delay(30);
-            if(P3->IFG & BIT7)
-            {
                     clockChange++;
                     P3->IFG &= ~ BIT7;      //Turn the flag off
-            }
+                    P3->IE &= ~ BIT7;
         }
-        if(P3->IFG & BIT6)          //If the interrupt is on P3.6
+        else if(P3->IFG & BIT6)          //If the interrupt is on P3.6
         {
-            ms_delay(30);
-            if(P3->IFG & BIT6)
-            {
-                    setAlarm = 1;
+                    setTime = 1;
                     currentState = 1;
                     P3->IFG &= ~ BIT6;      //Turn the flag off
-            }
+                    P3->IE &= ~ BIT6;
+        }
+        else if(P3->IFG & BIT5)
+        {
+            if(alarmSet == 0) alarmSet = 1;
+            else alarmSet = 0;
+            P3->IFG &= ~ BIT5;
+            P3->IE &=~ BIT5;
+        }
+        else if(P3->IFG & BIT3)
+        {
+            if(alarmSet == 1)
+            snoozedec = 1;
+            P3->IFG &= ~BIT3;
+            P3->IE &= ~ BIT3;
+        }
+        else if(P3->IFG & BIT2)
+        {
+            currentState = 2;
+            setalarm = 1;
+            P3->IFG &= ~ BIT2;
+            P3->IE &= ~ BIT2;
         }
     }
-    else if(currentState == 1)
+    else if(currentState == 1)  //set time state
     {
         if(P3->IFG & BIT6)          //If the interrupt is on P3.6
-               {
-                       ms_delay(30);
-                       if(P3->IFG & BIT6)
-                       {
-                           setAlarm ++;
-                           if(setAlarm == 4) setAlarm = 1;
-                           P3->IFG &= ~ BIT6;      //Turn the flag off
-                       }
-               }
+       {
+                   setTime ++;
+                   if(setTime == 3) currentState = 0;
+                   P3->IFG &= ~ BIT6;      //Turn the flag off
+                   P3->IE &= ~ BIT6;
+       }
+        else if(P3->IFG & BIT5)
+       {
+           onOffUp = 1;
+           P3->IFG &= ~BIT5;
+           P3->IE &= ~BIT5;
+       }
+        else if(P3->IFG & BIT7)
+       {
+           P3->IFG &= ~BIT7;
+       }
+        else if(P3->IFG & BIT3)
+        {
+            snoozedec = 1;
+            P3->IFG &= ~ BIT3;
+            P3->IE &= ~BIT3;
+        }
+        else if(P3->IFG & BIT2)          //If the interrupt is on P3.6
+       {
+            P3->IFG &= ~ BIT2;      //Turn the flag off
+            P3->IE &= ~ BIT2;
+       }
     }
-
+    else if(currentState == 2)
+    {
+        if(P3->IFG & BIT6)          //If the interrupt is on P3.6
+       {
+                   setTime ++;
+                   if(setTime == 3) currentState = 0;
+                   P3->IFG &= ~ BIT6;      //Turn the flag off
+                   P3->IE &= ~ BIT6;
+       }
+        else if(P3->IFG & BIT5)
+       {
+           onOffUp = 1;
+           P3->IFG &= ~BIT5;
+           P3->IE &= ~BIT5;
+       }
+        else if(P3->IFG & BIT7)
+       {
+           P3->IFG &= ~BIT7;
+       }
+        else if(P3->IFG & BIT3)
+        {
+            snoozedec = 1;
+            P3->IFG &= ~ BIT3;
+            P3->IE &= ~BIT3;
+        }
+        else if(P3->IFG & BIT2)          //If the interrupt is on P3.6
+       {
+            setalarm++;
+            if(setalarm == 3) currentState = 0;
+            P3->IFG &= ~ BIT2;      //Turn the flag off
+            P3->IE &= ~ BIT2;
+       }
+    }
 }
 //Custom function to check whether or not the clock speed button has been pressed and then changes the spped respectively
 void checkClockChange()
 {
-    if((clockChange %2) == 0) TIMER32_1->LOAD = 30000;         //Load .0167 seconds into the timer = 3000000
-    else    TIMER32_1->LOAD = 3000000;         //Load 1 seconds into the timer = 3000000
+    if((clockChange %2) == 0)
+        {
+            TIMER32_1->LOAD = 30000;         //Load .0167 seconds into the timer = 3000000
+        }
+    else
+    {
+        TIMER32_1->LOAD = 3000000;         //Load 1 seconds into the timer = 3000000
+    }
 }
 //This is a custom function that will blink the hours, minutes or seconds depending on what the user wants to change
-void blinkHours()
+void blinkCLKHours()
 {
     int i = 0;//initialize i at zero for the for loop counter
     //Store the strings that need to sent to the LCD into four strings
@@ -453,12 +766,12 @@ void blinkHours()
     {
         LCD_data(currentTime[i]);     //send LCD_data 1 character at a time
     }
-    ms_delay(250);
+    ms_delay(100);
     if (blinking) blinking = 0;
     else blinking = 1;
 }
 //This is a custom function that will blink the hours, minutes or seconds depending on what the user wants to change
-void blinkMinutes()
+void blinkCLKMinutes()
 {
     int i = 0;//initialize i at zero for the for loop counter
     //Store the strings that need to sent to the LCD into four strings
@@ -522,12 +835,12 @@ void blinkMinutes()
     {
         LCD_data(currentTime[i]);     //send LCD_data 1 character at a time
     }
-    ms_delay(250);
+    ms_delay(100);
     if (blinking) blinking = 0;
     else blinking = 1;
 }
 //This is a custom function that will blink the hours, minutes or seconds depending on what the user wants to change
-void blinkSeconds()
+void blinkCLKSeconds()
 {
     int i = 0;//initialize i at zero for the for loop counter
     //Store the strings that need to sent to the LCD into four strings
@@ -591,7 +904,280 @@ void blinkSeconds()
     {
         LCD_data(currentTime[i]);     //send LCD_data 1 character at a time
     }
-    ms_delay(250);
+    ms_delay(100);
     if (blinking) blinking = 0;
     else blinking = 1;
 }
+//Custom function to initialize the button for on/off/up
+void onOffUpBtn()
+{
+    P3->SEL0 &= ~BIT5;          //Set as GPIO
+    P3->SEL1 &= ~BIT5;
+    P3->DIR &= ~BIT5;           //Set as input
+    P3->REN |= BIT5;            //Enable resistor
+    P3->OUT |= BIT5;            //Pull- up the resistor
+    P3->IES |= BIT5;            //Set the interrupt flag to be set when the button goes from 1 to 0
+    P3->IE  |= BIT5;            //Enable an interrupt on P3.7
+    P3->IFG = 0;                //Initialize interrupt flag to 0
+    NVIC->ISER[1] = 1 <<((PORT3_IRQn)& 31);         //This initializes which interrupt is going to be used
+}
+//Custom function to initialize the button for snooze/decrement
+void snoozeDec()
+{
+    P3->SEL0 &= ~BIT3;          //Set as GPIO
+    P3->SEL1 &= ~BIT3;
+    P3->DIR &= ~BIT3;           //Set as input
+    P3->REN |= BIT3;            //Enable resistor
+    P3->OUT |= BIT3;            //Pull- up the resistor
+    P3->IES |= BIT3;            //Set the interrupt flag to be set when the button goes from 1 to 0
+    P3->IE  |= BIT3;            //Enable an interrupt on P3.7
+    P3->IFG = 0;                //Initialize interrupt flag to 0
+    NVIC->ISER[1] = 1 <<((PORT3_IRQn)& 31);         //This initializes which interrupt is going to be used
+}
+//Custom function to initialize the button for setAlarm
+void setAlarm()
+{
+    P3->SEL0 &= ~BIT2;          //Set as GPIO
+    P3->SEL1 &= ~BIT2;
+    P3->DIR &= ~BIT2;           //Set as input
+    P3->REN |= BIT2;            //Enable resistor
+    P3->OUT |= BIT2;            //Pull- up the resistor
+    P3->IES |= BIT2;            //Set the interrupt flag to be set when the button goes from 1 to 0
+    P3->IE  |= BIT2;            //Enable an interrupt on P3.7
+    P3->IFG = 0;                //Initialize interrupt flag to 0
+    NVIC->ISER[1] = 1 <<((PORT3_IRQn)& 31);         //This initializes which interrupt is going to be used
+}
+
+void ADC14_init(void)
+    {
+    P5->SEL0 |= BIT4;                           //Configure pin 5.5 to A0 Input
+    P5->SEL1 |= BIT4;
+
+    ADC14->CTL0 &=~ ADC14_CTL0_ENC;         // disable ADC converter during initialization (BIT1 goes to zero)
+    ADC14->CTL0 |= 0x04200210;              // S/H pulse mode, SMCLK, 16 sample clocks
+    ADC14->CTL1 = 0x00000030;               // 14 bit resolution
+    ADC14->CTL1 |= 0x00000000;              // convert for mem0 register
+    ADC14->MCTL[1] = 0x00000001;            // ADC14INCHx = 0 for mem[1]
+    ADC14->CTL0 |= ADC14_CTL0_ENC;          // Enable ADC14ENC, starts the ADC after configuration (BIT1 goes to 1)
+    }
+void Get_ADC_Convert_Temp(void)
+    {
+    static volatile uint16_t result;
+    float voltage=0;
+    float Ctemp = 0;
+
+    ADC14->CTL0 |= ADC14_CTL0_SC;                       // Start Conversation (Sets BIT0 to 1)
+    while(!ADC14->IFGR0 & BIT0);                        // Wait for conversation to complete (interrupt flag)
+    result = ADC14->MEM[1];                             // Get value from ADC and store it as result
+    voltage = (result*3.3)/16384;                       // Calculate voltage
+    Ctemp = (voltage-.5)/.01;                           //Convert voltage reading to degrees celcius
+    Ftemp = (1.8*Ctemp)+32;                             //Convert Celcius to Fahrenheit
+    }
+//This is a custom function that will blink the hours, minutes or seconds depending on what the user wants to change
+void blinkALRMHours()
+{
+    int i = 0;//initialize i at zero for the for loop counter
+    //Store the strings that need to sent to the LCD into four strings
+    char currentAlarm[17];
+    if(blinking == 0)
+    {
+    if((am_pm %2) == 1)
+    {
+        if(Aseconds < 10 && Aminutes >= 10)
+           sprintf(currentAlarm,"  %2d:%d:0%d am   ", Ahours, Aminutes, Aseconds);
+        else if(Aseconds < 10 && Aminutes < 10)
+            sprintf(currentAlarm,"  %2d:0%d:0%d am   ", Ahours, Aminutes, Aseconds);
+        else if(Aminutes < 10 && Aseconds >=10)
+            sprintf(currentAlarm,"  %2d:0%d:%d am   ", Ahours, Aminutes, Aseconds);
+        else
+            sprintf(currentAlarm,"  %2d:%d:%d am   ", Ahours, Aminutes, Aseconds);
+    }
+    else
+    {
+        if(Aseconds < 10 && Aminutes >= 10)
+           sprintf(currentAlarm,"  %2d:%d:0%d pm   ", Ahours, Aminutes, Aseconds);
+        else if(Aseconds < 10 && Aminutes < 10)
+            sprintf(currentAlarm,"  %2d:0%d:0%d pm   ", Ahours, Aminutes, Aseconds);
+        else if(Aminutes < 10 && Aseconds >=10)
+            sprintf(currentAlarm,"  %2d:0%d:%d pm   ", Ahours, Aminutes, Aseconds);
+        else
+            sprintf(currentAlarm,"  %2d:%d:%d pm   ", Ahours, Aminutes, Aseconds);
+    }
+    }
+    else if(blinking == 1)
+    {
+        if((am_pm %2) == 1)
+        {
+            if(Aseconds < 10 && Aminutes >= 10)
+               sprintf(currentAlarm,"    :%d:0%d am   ", Aminutes, Aseconds);
+            else if(Aseconds < 10 && Aminutes < 10)
+                sprintf(currentAlarm,"    :0%d:0%d am   ", Aminutes, Aseconds);
+            else if(Aminutes < 10 && Aseconds >=10)
+                sprintf(currentAlarm,"    :0%d:%d am   ", Aminutes, Aseconds);
+            else
+                sprintf(currentAlarm,"    :%d:%d am   ", Aminutes, Aseconds);
+        }
+        else
+        {
+            if(Aseconds < 10 && Aminutes >= 10)
+               sprintf(currentAlarm,"    :%d:0%d pm   ", Aminutes, Aseconds);
+            else if(Aseconds < 10 && Aminutes < 10)
+                sprintf(currentAlarm,"    :0%d:0%d pm   ", Aminutes, Aseconds);
+            else if(Aminutes < 10 && Aseconds >=10)
+                sprintf(currentAlarm,"    :0%d:%d pm   ", Aminutes, Aseconds);
+            else
+                sprintf(currentAlarm,"    :%d:%d pm   ", Aminutes, Aseconds);
+        }
+    }
+    ms_delay(5);
+    LCD_command(0x01);  //clear display
+    LCD_command(0x80);  //start on first line
+    ms_delay(5);
+
+    for(i=0; i<16; i++)     //run through string length
+    {
+        LCD_data(currentAlarm[i]);     //send LCD_data 1 character at a Alarm
+    }
+    ms_delay(100);
+    if (blinking) blinking = 0;
+    else blinking = 1;
+}
+//This is a custom function that will blink the hours, minutes or seconds depending on what the user wants to change
+void blinkALRMMinutes()
+{
+    int i = 0;//initialize i at zero for the for loop counter
+    //Store the strings that need to sent to the LCD into four strings
+    char currentAlarm[17];
+    if(blinking == 0)
+    {
+    if((Aam_pm %2) == 1)
+    {
+        if(Aseconds < 10 && Aminutes >= 10)
+           sprintf(currentAlarm,"  %2d:%d:0%d am   ", Ahours, Aminutes, Aseconds);
+        else if(Aseconds < 10 && Aminutes < 10)
+            sprintf(currentAlarm,"  %2d:0%d:0%d am   ", Ahours, Aminutes, Aseconds);
+        else if(Aminutes < 10 && Aseconds >=10)
+            sprintf(currentAlarm,"  %2d:0%d:%d am   ", Ahours, Aminutes, Aseconds);
+        else
+            sprintf(currentAlarm,"  %2d:%d:%d am   ", Ahours, Aminutes, Aseconds);
+    }
+    else
+    {
+        if(Aseconds < 10 && Aminutes >= 10)
+           sprintf(currentAlarm,"  %2d:%d:0%d pm   ", Ahours, Aminutes, Aseconds);
+        else if(Aseconds < 10 && Aminutes < 10)
+            sprintf(currentAlarm,"  %2d:0%d:0%d pm   ", Ahours, Aminutes, Aseconds);
+        else if(Aminutes < 10 && Aseconds >=10)
+            sprintf(currentAlarm,"  %2d:0%d:%d pm   ", Ahours, Aminutes, Aseconds);
+        else
+            sprintf(currentAlarm,"  %2d:%d:%d pm   ", Ahours, Aminutes, Aseconds);
+    }
+    }
+    else if(blinking == 1)
+    {
+        if((Aam_pm %2) == 1)
+        {
+            if(Aseconds < 10 && Aminutes >= 10)
+               sprintf(currentAlarm,"  %2d:  :0%d am   ", Ahours, Aseconds);
+            else if(Aseconds < 10 && Aminutes < 10)
+                sprintf(currentAlarm,"  %2d:  :0%d am   ", Ahours, Aseconds);
+            else if(Aminutes < 10 && Aseconds >=10)
+                sprintf(currentAlarm,"  %2d:  :%d am   ", Ahours, Aseconds);
+            else
+                sprintf(currentAlarm,"  %2d:  :%d am   ", Ahours, Aseconds);
+        }
+        else
+        {
+            if(Aseconds < 10 && Aminutes >= 10)
+               sprintf(currentAlarm,"  %2d:  :0%d pm   ", Ahours, Aseconds);
+            else if(Aseconds < 10 && Aminutes < 10)
+                sprintf(currentAlarm,"  %2d:  :0%d pm   ", Ahours, Aseconds);
+            else if(Aminutes < 10 && Aseconds >=10)
+                sprintf(currentAlarm,"  %2d:  :%d pm   ", Ahours, Aseconds);
+            else
+                sprintf(currentAlarm,"  %2d:  :%d pm   ",Ahours, Aseconds);
+        }
+    }
+    ms_delay(5);
+    LCD_command(0x01);  //clear display
+    LCD_command(0x80);  //start on first line
+    ms_delay(5);
+
+    for(i=0; i<16; i++)     //run through string length
+    {
+        LCD_data(currentAlarm[i]);     //send LCD_data 1 character at a time
+    }
+    ms_delay(100);
+    if (blinking) blinking = 0;
+    else blinking = 1;
+}
+//This is a custom function that will blink the hours, minutes or seconds depending on what the user wants to change
+void blinkALRMSeconds()
+{
+    int i = 0;//initialize i at zero for the for loop counter
+    //Store the strings that need to sent to the LCD into four strings
+    char currentAlarm[17];
+    if(blinking == 0)
+    {
+    if((Aam_pm %2) == 1)
+    {
+        if(Aseconds < 10 && Aminutes >= 10)
+           sprintf(currentAlarm,"  %2d:%d:0%d am   ", Ahours, Aminutes, Aseconds);
+        else if(Aseconds < 10 && Aminutes < 10)
+            sprintf(currentAlarm,"  %2d:0%d:0%d am   ", Ahours, Aminutes, Aseconds);
+        else if(Aminutes < 10 && Aseconds >=10)
+            sprintf(currentAlarm,"  %2d:0%d:%d am   ", Ahours, Aminutes, Aseconds);
+        else
+            sprintf(currentAlarm,"  %2d:%d:%d am   ", Ahours, Aminutes, Aseconds);
+    }
+    else
+    {
+        if(Aseconds < 10 && Aminutes >= 10)
+           sprintf(currentAlarm,"  %2d:%d:0%d pm   ", Ahours, Aminutes, Aseconds);
+        else if(Aseconds < 10 && Aminutes < 10)
+            sprintf(currentAlarm,"  %2d:0%d:0%d pm   ", Ahours, Aminutes, Aseconds);
+        else if(Aminutes < 10 && Aseconds >=10)
+            sprintf(currentAlarm,"  %2d:0%d:%d pm   ", Ahours, Aminutes, Aseconds);
+        else
+            sprintf(currentAlarm,"  %2d:%d:%d pm   ", Ahours, Aminutes, Aseconds);
+    }
+    }
+    else if(blinking == 1)
+    {
+        if((Aam_pm %2) == 1)
+        {
+            if(Aseconds < 10 && Aminutes >= 10)
+               sprintf(currentAlarm,"  %2d:%d:   am   ", Ahours, Aminutes);
+            else if(Aseconds < 10 && Aminutes < 10)
+                sprintf(currentAlarm,"  %2d:0%d:   am   ", Ahours, Aminutes);
+            else if(Aminutes < 10 && Aseconds >=10)
+                sprintf(currentAlarm,"  %2d:0%d:   am   ", Ahours, Aminutes);
+            else
+                sprintf(currentAlarm,"  %2d:%d:   am   ", Ahours, Aminutes);
+        }
+        else
+        {
+            if(Aseconds < 10 && Aminutes >= 10)
+               sprintf(currentAlarm,"  %2d:%d:   pm   ", Ahours, Aminutes);
+            else if(Aseconds < 10 && Aminutes < 10)
+                sprintf(currentAlarm,"  %2d:0%d:   pm   ", Ahours, Aminutes);
+            else if(Aminutes < 10 && Aseconds >=10)
+                sprintf(currentAlarm,"  %2d:0%d:   pm   ", Ahours, Aminutes);
+            else
+                sprintf(currentAlarm,"  %2d:%d:   pm   ", Ahours, Aminutes);
+        }
+    }
+    ms_delay(5);
+    LCD_command(0x01);  //clear display
+    LCD_command(0x80);  //start on first line
+    ms_delay(5);
+
+    for(i=0; i<16; i++)     //run through string length
+    {
+        LCD_data(currentAlarm[i]);     //send LCD_data 1 character at a Alarm
+    }
+    ms_delay(100);
+    if (blinking) blinking = 0;
+    else blinking = 1;
+}
+
