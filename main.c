@@ -28,6 +28,10 @@ uint8_t onOffUp = 0;
 uint8_t alarmSet = 0; //Variable to keep track of whether the alarm is on or off
 uint8_t snoozedec = 0;
 uint8_t setalarm = 0;
+uint8_t lights = 0; //global variable used to hold the interrupt flag
+uint8_t LED =  0;   //global variable used to hold the PWM signal of the lighs
+
+
 
 enum states{
     COUNTING,    //This is the first state where the switch has not yet been pressed and LED is off
@@ -69,6 +73,11 @@ void blinkALRMSeconds();
 void blinkALRMMinutes();
 void blinkALRMHours();
 void setAlarm();
+void PWMlights_init();
+void PWMlights_update();
+void Lightsintrpt();
+void T32_INT1_IRQHandler(void);
+
 
 
 
@@ -1180,4 +1189,62 @@ void blinkALRMSeconds()
     if (blinking) blinking = 0;
     else blinking = 1;
 }
+void PWMlights_init()
+{
 
+    P7->SEL0 |= (BIT5|BIT6|BIT7);       //initialize P7.5-7.7 for Timer A
+    P7->SEL1 &= ~(BIT5|BIT6|BIT7);
+    P7->DIR |= (BIT5|BIT6|BIT7);        //Set direction as output
+    P7->OUT &= ~(BIT5|BIT6|BIT7);       //Start with all lights off
+ 
+    TIMER_A1->CCR[0] = 60000 -1;                        //Initialize Timer A
+    TIMER_A1->CCTL[1] = TIMER_A_CCTLN_OUTMOD_7;
+    TIMER_A1->CCR[1] = 0;   //RED
+    TIMER_A1->CCTL[2] = TIMER_A_CCTLN_OUTMOD_7;
+    TIMER_A1->CCR[2] = 0;   //GREEN
+    TIMER_A1->CCTL[3] = TIMER_A_CCTLN_OUTMOD_7;
+    TIMER_A1->CCR[3] = 0;   //BLUE
+    TIMER_A1->CTL = TASSEL_2| MC_1| TACLR;
+}
+//Custom function to update the intensity of the LED's with an input of what light is to be changed
+void PWMlights_update()
+{   
+    //if light is one the user wants to update the LEDs
+    if(lights == 1)
+    {
+        {
+            TIMER_A1->CCR[1] = ((LED * 600) -1);    //RED LED
+            TIMER_A1->CCR[2] = ((LED * 600) -1);  //Green LED
+            TIMER_A1->CCR[3] = ((LED * 600) -1);    //Blue LED
+            
+            TIMER32_1->LOAD = 9000000;
+            lights = 0; //Reset timer 32 interrupt flag
+        }
+    }
+}
+//Custom function to initialize the screensaver with an interrupt with no output
+
+void Lightsintrpt()
+{
+    //initialization for timer 32 interrupt
+    TIMER32_1->CONTROL = 0XC2;          //initialize timer 32 for periodic mode, no prescaler, 32-bit timer
+    TIMER32_1->LOAD = 9000000;         //Load 3 seconds seconds into the timer = 3000000 * 3
+    TIMER32_1->INTCLR = 0;              //Clear interupt flag
+    TIMER32_1->CONTROL |= 0X20;         //enable interrupts
+
+}
+void T32_INT1_IRQHandler(void)
+
+{
+    //set the global flag true and then clear timer 32 interrrupt flag
+    lights = 1;
+    TIMER32_1->INTCLR = 0;
+    if(LED < 100)
+    {
+        LED++;
+    }
+    else
+    {
+        LED = 100;
+    }
+}
