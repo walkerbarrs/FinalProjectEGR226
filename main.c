@@ -13,7 +13,6 @@
  * Class:   EGR226
  * Description: This is a code for an alarm clock that allows the user
  * to set the time and alarm using pushbuttons
- //////////////////////////////////////////////////////////////////////Last Updated 12/5/2018///////////////////////////////////////////////////////////////////////////////////
  */
 
 uint8_t alarmChange = 1;
@@ -220,26 +219,23 @@ void main(void)
     }
 }
 }
-//Custom function to initialize P5.5 and 6.0 for ADC
+//Custom function to initialize P2.0 and P2.1 for the LEDS and P5.5 for ADC
 void ADCpin_init()
 {
     //Initialize Port 5 ADC
     P5->SEL0 |= BIT5;
     P5->SEL0 |= BIT5;
     P5->DIR &= ~BIT5;
-    //Initialize Port 6 ADC
-    P6->SEL0 |= BIT0;
-    P6->SEL0 |= BIT0;
-    P6->DIR &= ~BIT0;
+
 }
 //Custom function to initialize the ADC
 void ADC_init()
 {
     ADC14->CTL0 &=~ 0x00000002; //diable ENC for configuration
-    ADC14->CTL0 |= 0x04260290;  //S/H pulse Mode,SMCLK, 16 sample checks
+    ADC14->CTL0 |= 0x04400110;  //S/H pulse Mode,SMCLK, 16 sample checks
     ADC14->CTL1 = 0x00000030;   //14 bit resolution
-    ADC14->MCTL[0] |= 0; //1st zero for mem0
-    ADC14->MCTL[15] |= 15;   // ADC14INCHx = 0 for mem[1]
+    ADC14->CTL1 |= 0x00000000;  //selecting mem0 register
+    ADC14->MCTL[0] = 0x00000000; //1st zero for mem0
     ADC14->CTL0 |= 0x00000002; //enable ENC for configuration
 }
 //Custom funciton to initalize Timer A on P7.4 and P6.7 with no output
@@ -263,25 +259,18 @@ void Systick_init()
     SysTick->VAL = 0;   //any write to current clears it
     SysTick->CTRL = 0x00000005; //enable systic, 3mHz, no interrupts
 }
-//custom function to read the potentiometer and temp sensor
+//custom function to read the potentiometer and return the adjusted voltage
 void readPotentiometer()
 {
     //initialize variables
     float result;
-    float tempresult = 0;
-    float Ctemp = 0;
- 
-    ADC14->CTL0 |= 0x00000001;  //start conversion
-    while(!(ADC14->IFGR0));
-    result = ADC14->MEM[0];
-    tempresult = ADC14->MEM[15];                             // Get value from ADC and store it as result
-    nADC = ((result *3.3)/ 16384);     //result * vref / 2^14 == resolution
-    potVal = (nADC / 3.3) * (60000-1);        //Get the percentage of potval to vRef and multiply by the Period
-    updateTimerA(potVal);                   //Update Timer A with the value of potVal
-    voltage = (tempresult*3.3)/16384;                       // Calculate voltage
-    Ctemp = (voltage-.5)/.01;                           //Convert voltage reading to degrees celcius
-    Ftemp = (1.8*Ctemp)+32;                             //Convert Celcius to Fahrenheit
 
+    ADC14->CTL0 |= 0x00000001;  //start conversion
+    while(!ADC14->IFGR0);
+    result = ADC14->MEM[0];
+    nADC = ((result *3.3)/ 16384);     //result * vref / 2^14 == resolution
+    potVal = (nADC / 3.3)*(60000 - 1);        //Get the percentage of potval to vRef and multiply by the Period
+    updateTimerA(potVal);                   //Update Timer A with the value of potVal
 }
 //Custom function to update LED 2.0 and 2.1 with the new intensity
 void updateTimerA(float potVal)
@@ -550,7 +539,6 @@ void PORT3_IRQHandler(void)
         {
             if(alarmSet == 0) alarmSet = 1; //toggle alarmset
             else if(alarmSet == 1) alarmSet = 0;
-            ms_delay(5);
             P3->IFG &= ~ BIT5;          //turn off the flag
             P3->IE &=~ BIT5;            //turn off the interrupt
         }
@@ -1204,38 +1192,6 @@ void Lightsintrpt()
     NVIC->ISER[0] = 1 <<((T32_INT2_IRQn)& 31);      //This initializes which interrupt is going to be used
 
 }
-//custom function to initialize the TimerA for the speakers with no output
-void PWMSpeaker_init()
-{
-    P9->SEL0 |= (BIT3|BIT2);       //initialize P9.3 and 9.4 for Timer A
-    P9->SEL1 &= ~(BIT3|BIT2);
-    P9->DIR |= (BIT3|BIT2);        //Set direction as output
-
-    TIMER_A3->CCR[0] = 12000;                        //Initialize Timer A for C major frequency
-    TIMER_A3->CCTL[3] = TIMER_A_CCTLN_OUTMOD_7;
-    TIMER_A3->CCR[3] = 0;   //Left Speaker
-    TIMER_A3->CCTL[4] = TIMER_A_CCTLN_OUTMOD_7;
-    TIMER_A3->CCR[4] = 0;   //Right Speaker
-    TIMER_A3->CTL = TASSEL_2| MC_1| TACLR;
-}
-
-//Custom function to update the intensity of the LED's with an input of what light is to be changed
-void Speaker_update()
-{
-   if(speaker == 1)
-    {
-        TIMER_A3->CCR[3] = 6000;
-        TIMER_A3->CCR[4] = 2868;
- 
-    }
-    else if(speaker >= 2)
-    {
-       TIMER_A3->CCR[3] = 0;
-        TIMER_A3->CCR[4] = 0;
- 
-        speaker = 0; //Reset timer 32 interrupt flag
-    }
-}
 //custom functions to check the states of various inputs when in the set time state with no outputs
 void setTimeConditions()
 {
@@ -1355,5 +1311,129 @@ void setAlarmChanges()
         }
         snoozedec = 0;              //reset the flag back to 0
     }
+}
+//custom function to initialize the TimerA for the speakers with no output
+void PWMSpeaker_init()
+{
+
+    P9->SEL0 |= (BIT3|BIT2);       //initialize P9.3 and 9.4 for Timer A
+    P9->SEL1 &= ~(BIT3|BIT2);
+    P9->DIR |= (BIT3|BIT2);        //Set direction as output
+
+    TIMER_A3->CCR[0] = 12000;                        //Initialize Timer A for C major frequency
+    TIMER_A3->CCTL[3] = TIMER_A_CCTLN_OUTMOD_7;
+    TIMER_A3->CCR[3] = 0;   //Left Speaker
+    TIMER_A3->CCTL[4] = TIMER_A_CCTLN_OUTMOD_7;
+    TIMER_A3->CCR[4] = 0;   //Right Speaker
+    TIMER_A3->CTL = TASSEL_2| MC_1| TACLR;
+}
+//Custom function to update the intensity of the LED's with an input of what light is to be changed
+void Speaker_update()
+{
+   if(speaker == 1)
+    {
+       TIMER_A3->CCR[0] = 12000;
+        TIMER_A3->CCR[3] = 6000;
+        TIMER_A3->CCR[4] = 6000;
+
+    }
+    else if(speaker >= 2)
+    {
+        TIMER_A3->CCR[0] = 0;
+        TIMER_A3->CCR[3] = 0;
+        TIMER_A3->CCR[4] = 0;
+
+        speaker = 0; //Reset timer 32 interrupt flag
+    }
+}
+//custom function to check the states of various inputs when alarmset is 1 with no outputs
+void alarmSetConditions()
+{
+    if(snoozedec == 1)                          //check to see if snooze was pressed
+    {
+        snoozedec = 0;  //then turn the snooze flag off
+        lights = 1;     //set lights to 1 so the LEDs can update
+        LED = 0;        //set LEDs back to 0
+        PWMlights_update(); //update the LEDs
+        wakeup = 0;         //reset wakeup
+        lights = 0;         //reset lights
+        speaker = 2;        //set speaker to 2 to turn it off
+        Speaker_update();   //update the speaker
+        speaker = 0;        //reset the speaker to 0
+        alarmSound = 0;     //reset alarm sound
+        alarmFlag = 0;      //reset alarm flag
+        alarmChange = 1;    //set alarm change to 1
+        Aminutes = Aminutes + 10;               //if it was add 10 to alarm minutes
+        if(Aminutes > 59)                       //if adding 10 produced a number greater than 60 set aminutes to Aminutes - 60
+            {
+                Aminutes = Aminutes - 60;
+                Ahours ++;                      //increment Ahours, if hours 13 then add 1 to Aam_pm and set hours back to 1
+                if(Ahours >12)
+                    {
+                        Aam_pm++;
+                        Ahours = 1;
+                    }
+            }
+        snoozedec = 0;  //then turn the snooze flag off
+
+    }
+    if(alarmChange == 1)                    //only check these things if the alarm has been changed
+    {
+    if(Aminutes < 5)                            //if alarm minutes is less than 5 set temp minutes = |Aminutes - 5| then take 60 - tempminutes to get 5 minutes before Aminutes
+        {
+        tempHours =  Ahours - 1;                //if Aminutes < 5, 5 minutes prior will be in the previous hour
+        if(Ahours == 1)                         //if the Alarm hours is 1 the previous hour will be 12 and ampm will be the opposite
+        {
+            tempHours = 12;
+            tempAmpm = Aam_pm + 1;
+        }
+            tempMinutes = abs(Aminutes - 5);    //temp minutes = |Aminutes -5|
+            tempMinutes = 60 + tempMinutes;     //because A minutes < 5 the minutes will be 60 - |Aminutes - 5|
+        }
+    else                                        //else tempAmpm = Aampm, temphours = Ahours, tempMinutes = Aminutes - 5
+        {
+            tempAmpm = Aam_pm;
+            tempHours = Ahours;
+            tempMinutes = Aminutes;                               //else tempMinutes is just Aminutes - 5
+        }
+    alarmChange = 0;                                                    //reset alarm change
+    }
+
+    readPotentiometer();                                           //Read the voltage from the potentiometer
+    if(wakeup)          //if wakeup is 1 check to see if it time == alarm time
+    {
+        if((hours == Ahours) && (minutes == Aminutes) && ((am_pm%2) == (Aam_pm%2))) //if the time  == alarm time ensure LEDs are at 100% and set alarm sound to 1
+                {
+                    LED = 100;
+                    PWMlights_update();
+                    alarmSound = 1;
+                }
+
+    }
+    else        //if wakeup = 0 check to see if the alarm is 5 minutes away
+    {
+        //if(((hours == tempHours)||(hours==Ahours)) && (((tempMinutes - minutes) <= 5)||(((Aminutes - minutes) <= 5) && (Aminutes - minutes) >= 0)) && (((am_pm % 2) == (tempAmpm%2))||((am_pm%2) == ((Aam_pm%2)))))   //if it is initialize the lights interrupt and set wake up to 1
+        if(((hours == tempHours) && ((tempMinutes - minutes) <= 5) && ((am_pm % 2) == (tempAmpm%2))) || ((hours==Ahours) && (((Aminutes - minutes) <= 5) && (Aminutes - minutes) >= 0) && ((am_pm%2) == (Aam_pm%2))))   //if it is initialize the lights interrupt and set wake up to 1
+        {
+            Lightsintrpt();
+            wakeup = 1;
+            speaker = 2;        //set speaker to 2 to turn it off
+            Speaker_update();   //update the speaker
+            speaker = 0;        //reset the speaker to 0
+        }
+    }
+    if(lights)  //if the lights flag goes off increment lights unless they are already at 100 and then update the lights and reset the flag
+    {
+        lightcount ++;                  //increment light count so after 3 seconds light count %3 = 0
+        if((lightcount % 3) == 0)
+        {
+            if(LED < 100)   LED++;      //if LED < 100 increment else keep LED at 100
+            else    LED = 100;
+            PWMlights_update();     //update Lights
+            lightcount = 0;         //reset lightcount
+        }
+        lights = 0;                 //reset lights
+    }
+    snoozedec = 0;                  //reset snooze
 }
 
