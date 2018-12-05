@@ -13,7 +13,7 @@
  * Class:   EGR226
  * Description: This is a code for an alarm clock that allows the user
  * to set the time and alarm using pushbuttons
- //////////////////////////////////////////////////////////////////////Last Updated 12/4/2018///////////////////////////////////////////////////////////////////////////////////
+ //////////////////////////////////////////////////////////////////////Last Updated 12/5/2018///////////////////////////////////////////////////////////////////////////////////
  */
 
 uint8_t alarmChange = 1;
@@ -1203,6 +1203,38 @@ void Lightsintrpt()
     TIMER32_2->CONTROL |= 0X20;         //enable interrupts
     NVIC->ISER[0] = 1 <<((T32_INT2_IRQn)& 31);      //This initializes which interrupt is going to be used
 
+}
+//custom function to initialize the TimerA for the speakers with no output
+void PWMSpeaker_init()
+{
+    P9->SEL0 |= (BIT3|BIT2);       //initialize P9.3 and 9.4 for Timer A
+    P9->SEL1 &= ~(BIT3|BIT2);
+    P9->DIR |= (BIT3|BIT2);        //Set direction as output
+
+    TIMER_A3->CCR[0] = 12000;                        //Initialize Timer A for C major frequency
+    TIMER_A3->CCTL[3] = TIMER_A_CCTLN_OUTMOD_7;
+    TIMER_A3->CCR[3] = 0;   //Left Speaker
+    TIMER_A3->CCTL[4] = TIMER_A_CCTLN_OUTMOD_7;
+    TIMER_A3->CCR[4] = 0;   //Right Speaker
+    TIMER_A3->CTL = TASSEL_2| MC_1| TACLR;
+}
+
+//Custom function to update the intensity of the LED's with an input of what light is to be changed
+void Speaker_update()
+{
+   if(speaker == 1)
+    {
+        TIMER_A3->CCR[3] = 6000;
+        TIMER_A3->CCR[4] = 2868;
+ 
+    }
+    else if(speaker >= 2)
+    {
+       TIMER_A3->CCR[3] = 0;
+        TIMER_A3->CCR[4] = 0;
+ 
+        speaker = 0; //Reset timer 32 interrupt flag
+    }
 }
 //custom functions to check the states of various inputs when in the set time state with no outputs
 void setTimeConditions()
