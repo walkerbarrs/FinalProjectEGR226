@@ -13,6 +13,7 @@
  * Class:   EGR226
  * Description: This is a code for an alarm clock that allows the user
  * to set the time and alarm using pushbuttons
+ //////////////////////////////////////////////////////////////////////Last Updated 12/4/2018///////////////////////////////////////////////////////////////////////////////////
  */
 
 uint8_t alarmChange = 1;
@@ -219,23 +220,26 @@ void main(void)
     }
 }
 }
-//Custom function to initialize P2.0 and P2.1 for the LEDS and P5.5 for ADC
+//Custom function to initialize P5.5 and 6.0 for ADC
 void ADCpin_init()
 {
     //Initialize Port 5 ADC
     P5->SEL0 |= BIT5;
     P5->SEL0 |= BIT5;
     P5->DIR &= ~BIT5;
-
+    //Initialize Port 6 ADC
+    P6->SEL0 |= BIT0;
+    P6->SEL0 |= BIT0;
+    P6->DIR &= ~BIT0;
 }
 //Custom function to initialize the ADC
 void ADC_init()
 {
     ADC14->CTL0 &=~ 0x00000002; //diable ENC for configuration
-    ADC14->CTL0 |= 0x04400110;  //S/H pulse Mode,SMCLK, 16 sample checks
+    ADC14->CTL0 |= 0x04260290;  //S/H pulse Mode,SMCLK, 16 sample checks
     ADC14->CTL1 = 0x00000030;   //14 bit resolution
-    ADC14->CTL1 |= 0x00000000;  //selecting mem0 register
-    ADC14->MCTL[0] = 0x00000000; //1st zero for mem0
+    ADC14->MCTL[0] |= 0; //1st zero for mem0
+    ADC14->MCTL[15] |= 15;   // ADC14INCHx = 0 for mem[1]
     ADC14->CTL0 |= 0x00000002; //enable ENC for configuration
 }
 //Custom funciton to initalize Timer A on P7.4 and P6.7 with no output
@@ -259,18 +263,25 @@ void Systick_init()
     SysTick->VAL = 0;   //any write to current clears it
     SysTick->CTRL = 0x00000005; //enable systic, 3mHz, no interrupts
 }
-//custom function to read the potentiometer and return the adjusted voltage
+//custom function to read the potentiometer and temp sensor
 void readPotentiometer()
 {
     //initialize variables
     float result;
-
+    float tempresult = 0;
+    float Ctemp = 0;
+ 
     ADC14->CTL0 |= 0x00000001;  //start conversion
-    while(!ADC14->IFGR0);
+    while(!(ADC14->IFGR0));
     result = ADC14->MEM[0];
+    tempresult = ADC14->MEM[15];                             // Get value from ADC and store it as result
     nADC = ((result *3.3)/ 16384);     //result * vref / 2^14 == resolution
-    potVal = (nADC / 3.3)*(60000 - 1);        //Get the percentage of potval to vRef and multiply by the Period
+    potVal = (nADC / 3.3) * (60000-1);        //Get the percentage of potval to vRef and multiply by the Period
     updateTimerA(potVal);                   //Update Timer A with the value of potVal
+    voltage = (tempresult*3.3)/16384;                       // Calculate voltage
+    Ctemp = (voltage-.5)/.01;                           //Convert voltage reading to degrees celcius
+    Ftemp = (1.8*Ctemp)+32;                             //Convert Celcius to Fahrenheit
+
 }
 //Custom function to update LED 2.0 and 2.1 with the new intensity
 void updateTimerA(float potVal)
