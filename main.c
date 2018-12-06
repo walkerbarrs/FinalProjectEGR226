@@ -219,23 +219,27 @@ void main(void)
     }
 }
 }
-//Custom function to initialize P2.0 and P2.1 for the LEDS and P5.5 for ADC
+//Custom function to initialize P5.5 and 6.0 for ADC
 void ADCpin_init()
 {
     //Initialize Port 5 ADC
     P5->SEL0 |= BIT5;
     P5->SEL0 |= BIT5;
     P5->DIR &= ~BIT5;
-
+    //Initialize Port 6 ADC
+    P6->SEL0 |= BIT0;
+    P6->SEL0 |= BIT0;
+    P6->DIR &= ~BIT0;
 }
+
 //Custom function to initialize the ADC
 void ADC_init()
 {
     ADC14->CTL0 &=~ 0x00000002; //diable ENC for configuration
-    ADC14->CTL0 |= 0x04400110;  //S/H pulse Mode,SMCLK, 16 sample checks
+    ADC14->CTL0 |= 0x04260290;  //S/H pulse Mode,SMCLK, 16 sample checks
     ADC14->CTL1 = 0x00000030;   //14 bit resolution
-    ADC14->CTL1 |= 0x00000000;  //selecting mem0 register
-    ADC14->MCTL[0] = 0x00000000; //1st zero for mem0
+    ADC14->MCTL[0] |= 0; //1st zero for mem0
+    ADC14->MCTL[15] |= 15;   // ADC14INCHx = 0 for mem[1]
     ADC14->CTL0 |= 0x00000002; //enable ENC for configuration
 }
 //Custom funciton to initalize Timer A on P7.4 and P6.7 with no output
@@ -259,18 +263,25 @@ void Systick_init()
     SysTick->VAL = 0;   //any write to current clears it
     SysTick->CTRL = 0x00000005; //enable systic, 3mHz, no interrupts
 }
-//custom function to read the potentiometer and return the adjusted voltage
+//custom function to read the potentiometer and temp sensor
 void readPotentiometer()
 {
     //initialize variables
     float result;
+    float tempresult = 0;
+    float Ctemp = 0;
 
     ADC14->CTL0 |= 0x00000001;  //start conversion
-    while(!ADC14->IFGR0);
+    while(!(ADC14->IFGR0));
     result = ADC14->MEM[0];
+    tempresult = ADC14->MEM[15];                             // Get value from ADC and store it as result
     nADC = ((result *3.3)/ 16384);     //result * vref / 2^14 == resolution
-    potVal = (nADC / 3.3)*(60000 - 1);        //Get the percentage of potval to vRef and multiply by the Period
+    potVal = (nADC / 3.3) * (60000-1);        //Get the percentage of potval to vRef and multiply by the Period
     updateTimerA(potVal);                   //Update Timer A with the value of potVal
+    voltage = (tempresult*3.3)/16384;                       // Calculate voltage
+    Ctemp = (voltage-.5)/.01;                           //Convert voltage reading to degrees celcius
+    Ftemp = (1.8*Ctemp)+32;                             //Convert Celcius to Fahrenheit
+
 }
 //Custom function to update LED 2.0 and 2.1 with the new intensity
 void updateTimerA(float potVal)
@@ -520,113 +531,51 @@ void setTimeInit()
 //Custom function add one to clockChange when the button is pressed with no output
 void PORT3_IRQHandler(void)
 {
-    if(currentState == 0)   //counting state
+    if(P3->IFG & BIT7)
     {
-        if(P3->IFG & BIT7)          //If the interrupt is on P3.6
+        clockChange++;          //add one to clock change
+        P3->IFG &= ~ BIT7;      //Turn the flag off
+        //P3->IE &= ~ BIT7;       //turn off interrupt
+    }
+    else if(P3->IFG & BIT6)
+    {
+        setTime ++;          //increment set time
+        if(setTime == 3)
+            currentState = 0;       //if set time is 3 set the current state to 0 (counting)
+        P3->IFG &= ~ BIT6;      //Turn the flag off
+        //P3->IE &= ~ BIT6;       //turn off the interrupt
+    }
+    else if(P3->IFG & BIT5)             //if the interrupt is on 3.5
+    {
+        if(currentState == 0)
+        onOffUp = 1;                     //set up to 1
+        else
         {
-            clockChange++;          //add one to clock change
-            P3->IFG &= ~ BIT7;      //Turn the flag off
-            P3->IE &= ~ BIT7;       //turn off interrupt
+            onOffUp = 1;
         }
-        else if(P3->IFG & BIT6)          //If the interrupt is on P3.6
-        {
-            setTime = 1;            //set settime to 1
-            currentState = 1;       //set current state to 1
-            P3->IFG &= ~ BIT6;      //Turn the flag off
-            P3->IE &= ~ BIT6;       //turn off interrupt
-        }
-        else if(P3->IFG & BIT5)             //if the interrupt is on 3.5
-        {
-            if(alarmSet == 0) alarmSet = 1; //toggle alarmset
-            else if(alarmSet == 1) alarmSet = 0;
-            P3->IFG &= ~ BIT5;          //turn off the flag
-            P3->IE &=~ BIT5;            //turn off the interrupt
-        }
-        else if(P3->IFG & BIT3)         //if the interrupt is on 3.3
+        P3->IFG &= ~BIT5;                //turn off the flag
+        //P3->IE &= ~BIT5;                 //turn the interrupt off
+    }
+    else if(P3->IFG & BIT3)
+    {
+        if(currentState == 0)   //counting state
         {
             if(alarmSet == 1)           //if the alarm is set set snooze flag to 1
             snoozedec = 1;
-            P3->IFG &= ~BIT3;           //turn off the flag
-            P3->IE &= ~ BIT3;           //turn the interrupt off
         }
-        else if(P3->IFG & BIT2)         //if the flag is on 3.2
-        {
-            currentState = 2;           //set current state to 2
-            setalarm = 1;               //set set alarm to 1
-            P3->IFG &= ~ BIT2;          //turn off the flag
-            P3->IE &= ~ BIT2;           //turn off the interrupt
-        }
-    }
-    else if(currentState == 1)  //set time state
-    {
-        if(P3->IFG & BIT6)          //If the interrupt is on P3.6
-       {
-            setTime ++;          //increment set time
-            if(setTime == 3)
-                currentState = 0;       //if set time is 3 set the current state to 0 (counting)
-            P3->IFG &= ~ BIT6;      //Turn the flag off
-            P3->IE &= ~ BIT6;       //turn off the interrupt
-       }
-        else if(P3->IFG & BIT5)             //if the interrupt is on 3.5
-       {
-           onOffUp = 1;                     //set up to 1
-           P3->IFG &= ~BIT5;                //turn off the flag
-           P3->IE &= ~BIT5;                 //turn the interrupt off
-       }
-        else if(P3->IFG & BIT7)             //if the interrupt is on 3.7
-       {
-           clockChange++;          //add one to clock change
-           P3->IFG &= ~BIT7;                //turn off the flag
-           P3->IE &= ~BIT7;                 //turn off the interrupt
-       }
-        else if(P3->IFG & BIT3)             //if the interrupt is on 3.3
+        else
         {
             snoozedec = 1;                  //set decrement to 1
-            P3->IFG &= ~ BIT3;              //turn off the flag
-            P3->IE &= ~BIT3;                //turn off the interrupt
         }
-        else if(P3->IFG & BIT2)          //If the interrupt is on P3.6
-       {
-            P3->IFG &= ~ BIT2;       //Turn the flag off
-            P3->IE &= ~ BIT2;        //turn the interrupt off
-       }
+        P3->IFG &= ~BIT3;           //turn off the flag
+        //P3->IE &= ~ BIT3;           //turn the interrupt off
     }
-    else if(currentState == 2)  //if in the set alarm state
+    else if(P3->IFG & BIT2)         //if the flag is on 3.2
     {
-        if(P3->IFG & BIT6)          //If the interrupt is on P3.6
-       {
-            setTime ++;          //increment set time
-            if(setTime == 3) currentState = 0; // if set time is 3 set the current state back to 0
-            P3->IFG &= ~ BIT6;      //Turn the flag off
-            P3->IE &= ~ BIT6;
-       }
-        else if(P3->IFG & BIT5)         //if the interrupt is on 3.5
-       {
-           onOffUp = 1;                 //set up to 1
-           P3->IFG &= ~BIT5;            //turn off the flag
-           P3->IE &= ~BIT5;             //turn off the interrupt
-       }
-        else if(P3->IFG & BIT7)         //if the interrupt is on 3.7
-       {
-           clockChange++;          //add one to clock change
-           P3->IFG &= ~BIT7;            //turn off the interrupt flag
-           P3->IE &= ~BIT7;             //tunr off the interrupt
-       }
-        else if(P3->IFG & BIT3)         //if the interrupt is on 3.3
-        {
-            snoozedec = 1;              //set decrement to 1
-            P3->IFG &= ~ BIT3;          //turn off the flag
-            P3->IE &= ~BIT3;            //turn off the interrupt
-        }
-        else if(P3->IFG & BIT2)          //If the interrupt is on P3.6
-       {
-            setalarm++;                     //increment set alarm
-            if(setalarm == 3) currentState = 0; //if set alarm is 3 set current state to 0
-            P3->IFG &= ~ BIT2;      //Turn the flag off
-            P3->IE &= ~ BIT2;       //turn off the interrupt
-       }
+        setalarm++;                     //increment set alarm
+        P3->IFG &= ~ BIT2;          //turn off the flag
+        //P3->IE &= ~ BIT2;           //turn off the interrupt
     }
-    ms_delay(10);
 }
 //Custom function to check whether or not the clock speed button has been pressed and then changes the spped respectively
 void checkClockChange()
