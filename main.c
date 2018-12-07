@@ -13,6 +13,7 @@
  * Class:   EGR226
  * Description: This is a code for an alarm clock that allows the user
  * to set the time and alarm using pushbuttons
+ //////////////////////////////////////////////////////////////////////Last Updated 12/7/2018///////////////////////////////////////////////////////////////////////////////////
  */
 
 uint8_t alarmChange = 1;
@@ -231,7 +232,6 @@ void ADCpin_init()
     P6->SEL0 |= BIT0;
     P6->DIR &= ~BIT0;
 }
-
 //Custom function to initialize the ADC
 void ADC_init()
 {
@@ -270,7 +270,7 @@ void readPotentiometer()
     float result;
     float tempresult = 0;
     float Ctemp = 0;
-
+ 
     ADC14->CTL0 |= 0x00000001;  //start conversion
     while(!(ADC14->IFGR0));
     result = ADC14->MEM[0];
@@ -531,51 +531,114 @@ void setTimeInit()
 //Custom function add one to clockChange when the button is pressed with no output
 void PORT3_IRQHandler(void)
 {
-    if(P3->IFG & BIT7)
+    if(currentState == 0)   //counting state
     {
-        clockChange++;          //add one to clock change
-        P3->IFG &= ~ BIT7;      //Turn the flag off
-        //P3->IE &= ~ BIT7;       //turn off interrupt
-    }
-    else if(P3->IFG & BIT6)
-    {
-        setTime ++;          //increment set time
-        if(setTime == 3)
-            currentState = 0;       //if set time is 3 set the current state to 0 (counting)
-        P3->IFG &= ~ BIT6;      //Turn the flag off
-        //P3->IE &= ~ BIT6;       //turn off the interrupt
-    }
-    else if(P3->IFG & BIT5)             //if the interrupt is on 3.5
-    {
-        if(currentState == 0)
-        onOffUp = 1;                     //set up to 1
-        else
+        if(P3->IFG & BIT7)          //If the interrupt is on P3.6
         {
-            onOffUp = 1;
+            clockChange++;          //add one to clock change
+            P3->IFG &= ~ BIT7;      //Turn the flag off
+            P3->IE &= ~ BIT7;       //turn off interrupt
         }
-        P3->IFG &= ~BIT5;                //turn off the flag
-        //P3->IE &= ~BIT5;                 //turn the interrupt off
-    }
-    else if(P3->IFG & BIT3)
-    {
-        if(currentState == 0)   //counting state
+        else if(P3->IFG & BIT6)          //If the interrupt is on P3.6
+        {
+            setTime = 1;            //set settime to 1
+            currentState = 1;       //set current state to 1
+            P3->IFG &= ~ BIT6;      //Turn the flag off
+            P3->IE &= ~ BIT6;       //turn off interrupt
+        }
+        else if(P3->IFG & BIT5)             //if the interrupt is on 3.5
+        {
+            if(alarmSet == 0) alarmSet = 1; //toggle alarmset
+            else if(alarmSet == 1) alarmSet = 0;
+            ms_delay(5);
+            P3->IFG &= ~ BIT5;          //turn off the flag
+            P3->IE &=~ BIT5;            //turn off the interrupt
+        }
+        else if(P3->IFG & BIT3)         //if the interrupt is on 3.3
         {
             if(alarmSet == 1)           //if the alarm is set set snooze flag to 1
             snoozedec = 1;
+            P3->IFG &= ~BIT3;           //turn off the flag
+            P3->IE &= ~ BIT3;           //turn the interrupt off
         }
-        else
+        else if(P3->IFG & BIT2)         //if the flag is on 3.2
+        {
+            currentState = 2;           //set current state to 2
+            setalarm = 1;               //set set alarm to 1
+            P3->IFG &= ~ BIT2;          //turn off the flag
+            P3->IE &= ~ BIT2;           //turn off the interrupt
+        }
+    }
+    else if(currentState == 1)  //set time state
+    {
+        if(P3->IFG & BIT6)          //If the interrupt is on P3.6
+       {
+            setTime ++;          //increment set time
+            if(setTime == 3)
+                currentState = 0;       //if set time is 3 set the current state to 0 (counting)
+            P3->IFG &= ~ BIT6;      //Turn the flag off
+            P3->IE &= ~ BIT6;       //turn off the interrupt
+       }
+        else if(P3->IFG & BIT5)             //if the interrupt is on 3.5
+       {
+           onOffUp = 1;                     //set up to 1
+           P3->IFG &= ~BIT5;                //turn off the flag
+           P3->IE &= ~BIT5;                 //turn the interrupt off
+       }
+        else if(P3->IFG & BIT7)             //if the interrupt is on 3.7
+       {
+           clockChange++;          //add one to clock change
+           P3->IFG &= ~BIT7;                //turn off the flag
+           P3->IE &= ~BIT7;                 //turn off the interrupt
+       }
+        else if(P3->IFG & BIT3)             //if the interrupt is on 3.3
         {
             snoozedec = 1;                  //set decrement to 1
+            P3->IFG &= ~ BIT3;              //turn off the flag
+            P3->IE &= ~BIT3;                //turn off the interrupt
         }
-        P3->IFG &= ~BIT3;           //turn off the flag
-        //P3->IE &= ~ BIT3;           //turn the interrupt off
+        else if(P3->IFG & BIT2)          //If the interrupt is on P3.6
+       {
+            P3->IFG &= ~ BIT2;       //Turn the flag off
+            P3->IE &= ~ BIT2;        //turn the interrupt off
+       }
     }
-    else if(P3->IFG & BIT2)         //if the flag is on 3.2
+    else if(currentState == 2)  //if in the set alarm state
     {
-        setalarm++;                     //increment set alarm
-        P3->IFG &= ~ BIT2;          //turn off the flag
-        //P3->IE &= ~ BIT2;           //turn off the interrupt
+        if(P3->IFG & BIT6)          //If the interrupt is on P3.6
+       {
+            setTime ++;          //increment set time
+            if(setTime == 3) currentState = 0; // if set time is 3 set the current state back to 0
+            P3->IFG &= ~ BIT6;      //Turn the flag off
+            P3->IE &= ~ BIT6;
+       }
+        else if(P3->IFG & BIT5)         //if the interrupt is on 3.5
+       {
+           onOffUp = 1;                 //set up to 1
+           P3->IFG &= ~BIT5;            //turn off the flag
+           P3->IE &= ~BIT5;             //turn off the interrupt
+       }
+        else if(P3->IFG & BIT7)         //if the interrupt is on 3.7
+       {
+           clockChange++;          //add one to clock change
+           P3->IFG &= ~BIT7;            //turn off the interrupt flag
+           P3->IE &= ~BIT7;             //tunr off the interrupt
+       }
+        else if(P3->IFG & BIT3)         //if the interrupt is on 3.3
+        {
+            snoozedec = 1;              //set decrement to 1
+            P3->IFG &= ~ BIT3;          //turn off the flag
+            P3->IE &= ~BIT3;            //turn off the interrupt
+        }
+        else if(P3->IFG & BIT2)          //If the interrupt is on P3.6
+       {
+            setalarm++;                     //increment set alarm
+            if(setalarm == 3) currentState = 0; //if set alarm is 3 set current state to 0
+            P3->IFG &= ~ BIT2;      //Turn the flag off
+            P3->IE &= ~ BIT2;       //turn off the interrupt
+       }
     }
+    ms_delay(10);
 }
 //Custom function to check whether or not the clock speed button has been pressed and then changes the spped respectively
 void checkClockChange()
@@ -1130,6 +1193,20 @@ void PWMlights_update()
 
     }
 }
+//Handler function for the T32 int2 interrupt with no output
+void T32_INT2_IRQHandler(void)
+{
+    if(wakeup == 1)
+    {
+    //set the global flag true and then clear timer 32 interrrupt flag
+    lights = 1;
+    }
+    if(alarmSound)
+    {
+        alarmFlag = 1;
+    }
+    TIMER32_2->INTCLR = 0;  //clear the interrupt flag
+}
 //Custom function to initialize the screensaver with an interrupt with no output
 void Lightsintrpt()
 {
@@ -1141,26 +1218,36 @@ void Lightsintrpt()
     NVIC->ISER[0] = 1 <<((T32_INT2_IRQn)& 31);      //This initializes which interrupt is going to be used
 
 }
-//custom function to check the states of various things when alarmchange is 1 with no outputs
-void alarmSoundConditions()
+//custom function to initialize the TimerA for the speakers with no output
+void PWMSpeaker_init()
 {
+    P9->SEL0 |= (BIT3|BIT2);       //initialize P9.3 and 9.4 for Timer A
+    P9->SEL1 &= ~(BIT3|BIT2);
+    P9->DIR |= (BIT3|BIT2);        //Set direction as output
 
-    if(alarmFlag)       //if the alarm flag is true increment speaker, update the speaker PWM and reset the flag
+    TIMER_A3->CCR[0] = 12000;                        //Initialize Timer A for C major frequency
+    TIMER_A3->CCTL[3] = TIMER_A_CCTLN_OUTMOD_7;
+    TIMER_A3->CCR[3] = 0;   //Left Speaker
+    TIMER_A3->CCTL[4] = TIMER_A_CCTLN_OUTMOD_7;
+    TIMER_A3->CCR[4] = 0;   //Right Speaker
+    TIMER_A3->CTL = TASSEL_2| MC_1| TACLR;
+}
+
+//Custom function to update the intensity of the LED's with an input of what light is to be changed
+void Speaker_update()
+{
+   if(speaker == 1)
     {
-        speaker ++;
-        Speaker_update();
-        alarmFlag = 0;
+        TIMER_A3->CCR[3] = 6000;
+        TIMER_A3->CCR[4] = 2868;
+ 
     }
-    if(alarmSet == 0)   //if the user turned the alarm off
+    else if(speaker >= 2)
     {
-        alarmSound = 0;     //reset the alarmSound
-        speaker = 2;        //set speaker to 2 and update it so it turns off
-        Speaker_update();
-        speaker = 0;        //reset speaker
-        LED = 0;              //set LED back to 0
-        PWMlights_update();     //update the LEDs
-        wakeup = 0;             //reset wakeup
-        onOffUp = 0;            //reset onOffUp
+       TIMER_A3->CCR[3] = 0;
+        TIMER_A3->CCR[4] = 0;
+ 
+        speaker = 0; //Reset timer 32 interrupt flag
     }
 }
 //custom functions to check the states of various inputs when in the set time state with no outputs
@@ -1282,129 +1369,5 @@ void setAlarmChanges()
         }
         snoozedec = 0;              //reset the flag back to 0
     }
-}
-//custom function to initialize the TimerA for the speakers with no output
-void PWMSpeaker_init()
-{
-
-    P9->SEL0 |= (BIT3|BIT2);       //initialize P9.3 and 9.4 for Timer A
-    P9->SEL1 &= ~(BIT3|BIT2);
-    P9->DIR |= (BIT3|BIT2);        //Set direction as output
-
-    TIMER_A3->CCR[0] = 12000;                        //Initialize Timer A for C major frequency
-    TIMER_A3->CCTL[3] = TIMER_A_CCTLN_OUTMOD_7;
-    TIMER_A3->CCR[3] = 0;   //Left Speaker
-    TIMER_A3->CCTL[4] = TIMER_A_CCTLN_OUTMOD_7;
-    TIMER_A3->CCR[4] = 0;   //Right Speaker
-    TIMER_A3->CTL = TASSEL_2| MC_1| TACLR;
-}
-//Custom function to update the intensity of the LED's with an input of what light is to be changed
-void Speaker_update()
-{
-   if(speaker == 1)
-    {
-       TIMER_A3->CCR[0] = 12000;
-        TIMER_A3->CCR[3] = 6000;
-        TIMER_A3->CCR[4] = 6000;
-
-    }
-    else if(speaker >= 2)
-    {
-        TIMER_A3->CCR[0] = 0;
-        TIMER_A3->CCR[3] = 0;
-        TIMER_A3->CCR[4] = 0;
-
-        speaker = 0; //Reset timer 32 interrupt flag
-    }
-}
-//custom function to check the states of various inputs when alarmset is 1 with no outputs
-void alarmSetConditions()
-{
-    if(snoozedec == 1)                          //check to see if snooze was pressed
-    {
-        snoozedec = 0;  //then turn the snooze flag off
-        lights = 1;     //set lights to 1 so the LEDs can update
-        LED = 0;        //set LEDs back to 0
-        PWMlights_update(); //update the LEDs
-        wakeup = 0;         //reset wakeup
-        lights = 0;         //reset lights
-        speaker = 2;        //set speaker to 2 to turn it off
-        Speaker_update();   //update the speaker
-        speaker = 0;        //reset the speaker to 0
-        alarmSound = 0;     //reset alarm sound
-        alarmFlag = 0;      //reset alarm flag
-        alarmChange = 1;    //set alarm change to 1
-        Aminutes = Aminutes + 10;               //if it was add 10 to alarm minutes
-        if(Aminutes > 59)                       //if adding 10 produced a number greater than 60 set aminutes to Aminutes - 60
-            {
-                Aminutes = Aminutes - 60;
-                Ahours ++;                      //increment Ahours, if hours 13 then add 1 to Aam_pm and set hours back to 1
-                if(Ahours >12)
-                    {
-                        Aam_pm++;
-                        Ahours = 1;
-                    }
-            }
-        snoozedec = 0;  //then turn the snooze flag off
-
-    }
-    if(alarmChange == 1)                    //only check these things if the alarm has been changed
-    {
-    if(Aminutes < 5)                            //if alarm minutes is less than 5 set temp minutes = |Aminutes - 5| then take 60 - tempminutes to get 5 minutes before Aminutes
-        {
-        tempHours =  Ahours - 1;                //if Aminutes < 5, 5 minutes prior will be in the previous hour
-        if(Ahours == 1)                         //if the Alarm hours is 1 the previous hour will be 12 and ampm will be the opposite
-        {
-            tempHours = 12;
-            tempAmpm = Aam_pm + 1;
-        }
-            tempMinutes = abs(Aminutes - 5);    //temp minutes = |Aminutes -5|
-            tempMinutes = 60 + tempMinutes;     //because A minutes < 5 the minutes will be 60 - |Aminutes - 5|
-        }
-    else                                        //else tempAmpm = Aampm, temphours = Ahours, tempMinutes = Aminutes - 5
-        {
-            tempAmpm = Aam_pm;
-            tempHours = Ahours;
-            tempMinutes = Aminutes;                               //else tempMinutes is just Aminutes - 5
-        }
-    alarmChange = 0;                                                    //reset alarm change
-    }
-
-    readPotentiometer();                                           //Read the voltage from the potentiometer
-    if(wakeup)          //if wakeup is 1 check to see if it time == alarm time
-    {
-        if((hours == Ahours) && (minutes == Aminutes) && ((am_pm%2) == (Aam_pm%2))) //if the time  == alarm time ensure LEDs are at 100% and set alarm sound to 1
-                {
-                    LED = 100;
-                    PWMlights_update();
-                    alarmSound = 1;
-                }
-
-    }
-    else        //if wakeup = 0 check to see if the alarm is 5 minutes away
-    {
-        //if(((hours == tempHours)||(hours==Ahours)) && (((tempMinutes - minutes) <= 5)||(((Aminutes - minutes) <= 5) && (Aminutes - minutes) >= 0)) && (((am_pm % 2) == (tempAmpm%2))||((am_pm%2) == ((Aam_pm%2)))))   //if it is initialize the lights interrupt and set wake up to 1
-        if(((hours == tempHours) && ((tempMinutes - minutes) <= 5) && ((am_pm % 2) == (tempAmpm%2))) || ((hours==Ahours) && (((Aminutes - minutes) <= 5) && (Aminutes - minutes) >= 0) && ((am_pm%2) == (Aam_pm%2))))   //if it is initialize the lights interrupt and set wake up to 1
-        {
-            Lightsintrpt();
-            wakeup = 1;
-            speaker = 2;        //set speaker to 2 to turn it off
-            Speaker_update();   //update the speaker
-            speaker = 0;        //reset the speaker to 0
-        }
-    }
-    if(lights)  //if the lights flag goes off increment lights unless they are already at 100 and then update the lights and reset the flag
-    {
-        lightcount ++;                  //increment light count so after 3 seconds light count %3 = 0
-        if((lightcount % 3) == 0)
-        {
-            if(LED < 100)   LED++;      //if LED < 100 increment else keep LED at 100
-            else    LED = 100;
-            PWMlights_update();     //update Lights
-            lightcount = 0;         //reset lightcount
-        }
-        lights = 0;                 //reset lights
-    }
-    snoozedec = 0;                  //reset snooze
 }
 
