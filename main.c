@@ -1141,6 +1141,28 @@ void Lightsintrpt()
     NVIC->ISER[0] = 1 <<((T32_INT2_IRQn)& 31);      //This initializes which interrupt is going to be used
 
 }
+//custom function to check the states of various things when alarmchange is 1 with no outputs
+void alarmSoundConditions()
+{
+
+    if(alarmFlag)       //if the alarm flag is true increment speaker, update the speaker PWM and reset the flag
+    {
+        speaker ++;
+        Speaker_update();
+        alarmFlag = 0;
+    }
+    if(alarmSet == 0)   //if the user turned the alarm off
+    {
+        alarmSound = 0;     //reset the alarmSound
+        speaker = 2;        //set speaker to 2 and update it so it turns off
+        Speaker_update();
+        speaker = 0;        //reset speaker
+        LED = 0;              //set LED back to 0
+        PWMlights_update();     //update the LEDs
+        wakeup = 0;             //reset wakeup
+        onOffUp = 0;            //reset onOffUp
+    }
+}
 //custom functions to check the states of various inputs when in the set time state with no outputs
 void setTimeConditions()
 {
